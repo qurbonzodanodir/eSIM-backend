@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     otp_expire_minutes: int = 5
+    monty_base_url: str | None = None
+    monty_username: str | None = None
+    monty_password: str | None = None
+    monty_timeout_seconds: float = 10.0
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -6,6 +6,7 @@ from app._core.database import session_factory
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
 from app.profile.router import router as profile_router
+from app.reseller.router import router as reseller_router
 
 
 def create_app() -> FastAPI:
@@ -13,6 +14,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router)
     application.include_router(catalog_router)
     application.include_router(profile_router)
+    application.include_router(reseller_router)
 
     @application.get("/health")
     async def health_check() -> dict[str, str]:
