@@ -1,4 +1,6 @@
-from sqlalchemy import Enum, String
+from uuid import UUID
+
+from sqlalchemy import Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app._core.models import Base, ModelMixin, SoftDeleteMixin
@@ -36,3 +38,23 @@ class User(Base, ModelMixin, SoftDeleteMixin):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    numbers: Mapped[list["UserNumber"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
+
+class UserNumber(Base, ModelMixin, SoftDeleteMixin):
+    __tablename__ = "user_numbers"
+
+    user_id: Mapped[UUID] = mapped_column(
+        Uuid(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    msisdn: Mapped[str] = mapped_column(String(20), nullable=False)
+    operator: Mapped[str] = mapped_column(String(100), nullable=False)
+    product: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    user: Mapped["User"] = relationship(back_populates="numbers")
