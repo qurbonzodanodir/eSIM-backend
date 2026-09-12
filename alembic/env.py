@@ -9,6 +9,7 @@ from app._core.models import Base
 from app.auth import models as auth_models
 from app.profile import models as profile_models
 from app.catalog import models as catalog_models
+from app.reseller import models as reseller_models
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

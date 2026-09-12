@@ -6,8 +6,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.integrations.payment import PaymentService
+from app.enums.kyc_status import KycStatus
 from app.profile.models import User
 from app.profile.schemas import ProfileResponse
+
+
+ALLOWED_KYC_TRANSITIONS: dict[KycStatus, frozenset[KycStatus]] = {
+    KycStatus.NOT_VERIFIED: frozenset({KycStatus.PENDING}),
+    KycStatus.PENDING: frozenset(
+        {KycStatus.NOT_VERIFIED, KycStatus.VERIFIED}
+    ),
+    KycStatus.VERIFIED: frozenset(),
+}
 
 
 class ProfileService:
@@ -49,3 +59,34 @@ class ProfileService:
                 if number.deleted_at is None
             ],
         )
+
+    async def update_kyc_status(
+        self,
+        user_id: UUID,
+        new_status: KycStatus,
+    ) -> User:
+        user = await self.session.scalar(
+            select(User).where(
+                User.id == user_id,
+                User.deleted_at.is_(None),
+            )
+        )
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Profile not found",
+            )
+
+        if new_status not in ALLOWED_KYC_TRANSITIONS[user.kyc_status]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Invalid KYC transition: "
+                    f"{user.kyc_status} -> {new_status}"
+                ),
+            )
+
+        user.kyc_status = new_status
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.auth.models import OtpRequest, RefreshToken
+    from app.reseller.models import Order
 
 
 class User(Base, ModelMixin, SoftDeleteMixin):
@@ -39,6 +40,10 @@ class User(Base, ModelMixin, SoftDeleteMixin):
         cascade="all, delete-orphan",
     )
     numbers: Mapped[list["UserNumber"]] = relationship(
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    orders: Mapped[list["Order"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
