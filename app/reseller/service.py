@@ -1,4 +1,5 @@
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -6,9 +7,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app._core.config import get_settings
 from app.enums.order_status import OrderStatus
 from app.integrations.monty import MontyClient, MontyError
-from app.reseller.models import Order
+from app.reseller.models import Order, ResellerSession
 from app.profile.models import User
 from app.reseller.schemas import (
     AssignBundleRequest,
@@ -24,9 +26,8 @@ class ResellerService:
         self.session = session
 
     async def list_bundles(self, filters: Mapping[str, Any]) -> BundleListResponse:
-        client = MontyClient()
+        client = await self._get_client()
         try:
-            await self._login(client)
             payload = await client.get_bundles(**filters)
         except MontyError as error:
             raise self._http_error(error) from error
@@ -58,9 +59,8 @@ class ResellerService:
                 )
             return OrderResponse.model_validate(existing)
 
-        client = MontyClient()
+        client = await self._get_client()
         try:
-            await self._login(client)
             payload = await client.assign_bundle(
                 {
                     "bundle_code": request.bundle_code,
@@ -115,9 +115,8 @@ class ResellerService:
         method_name: str,
         filters: Mapping[str, Any],
     ) -> UpstreamResponse:
-        client = MontyClient()
+        client = await self._get_client()
         try:
-            await self._login(client)
             payload = await getattr(client, method_name)(**filters)
         except MontyError as error:
             raise self._http_error(error) from error
@@ -138,13 +137,42 @@ class ResellerService:
                 detail="Profile not found",
             )
 
-    @staticmethod
-    async def _login(client: MontyClient) -> None:
-        payload = await client.login()
+    async def _get_client(self) -> MontyClient:
+        now = datetime.now(UTC)
+        session = await self.session.scalar(
+            select(ResellerSession).order_by(
+                ResellerSession.created_at.desc()
+            )
+        )
+        if session is not None and session.expires_at > now:
+            return MontyClient(access_token=session.access_token)
+
+        client = MontyClient()
+        try:
+            payload = await client.login()
+        except Exception:
+            await client.close()
+            raise
         access_token = payload.get("access_token")
         if not isinstance(access_token, str) or not access_token:
             raise MontyError(502, "Monty login returned no access token")
         client.access_token = access_token
+        expires_in = payload.get("expires_in")
+        if not isinstance(expires_in, int) or expires_in <= 0:
+            expires_in = get_settings().monty_session_expire_seconds
+        values = {
+            "access_token": access_token,
+            "refresh_token": self._value(payload, "refresh_token"),
+            "reseller_id": self._value(payload, "reseller_id"),
+            "expires_at": now + timedelta(seconds=expires_in),
+        }
+        if session is None:
+            self.session.add(ResellerSession(**values))
+        else:
+            for field, value in values.items():
+                setattr(session, field, value)
+        await self.session.commit()
+        return client
 
     @staticmethod
     def _normalize_bundle(bundle: Any) -> dict[str, Any]:

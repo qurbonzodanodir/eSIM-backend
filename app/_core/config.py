@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     monty_username: str | None = None
     monty_password: str | None = None
     monty_timeout_seconds: float = 10.0
+    monty_session_expire_seconds: int = 3600
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -1,7 +1,9 @@
 from uuid import UUID
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, String, Uuid
+from datetime import datetime
+
+from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app._core.models import Base, ModelMixin
@@ -43,3 +45,15 @@ class Order(Base, ModelMixin):
         nullable=False,
     )
     user: Mapped["User"] = relationship(back_populates="orders")
+
+
+class ResellerSession(Base, ModelMixin):
+    __tablename__ = "reseller_sessions"
+
+    access_token: Mapped[str] = mapped_column(String(2048), nullable=False)
+    refresh_token: Mapped[str | None] = mapped_column(String(2048))
+    reseller_id: Mapped[str | None] = mapped_column(String(100))
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
