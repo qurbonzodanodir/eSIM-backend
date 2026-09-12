@@ -73,7 +73,9 @@ class ResellerService:
                 {
                     "bundle_code": request.bundle_code,
                     "email": request.email,
-                    "whatsapp": request.whatsapp,
+                    "name": request.name,
+                    "order_reference": request.order_reference,
+                    "whatsapp_number": request.whatsapp_number,
                 }
             )
         except MontyError as error:

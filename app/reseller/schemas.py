@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from app.enums.order_status import OrderStatus
 
@@ -32,7 +32,11 @@ class AssignBundleRequest(BaseModel):
     order_reference: str
     bundle_code: str
     email: str | None = None
-    whatsapp: str | None = None
+    name: str | None = None
+    whatsapp_number: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("whatsapp_number", "whatsapp"),
+    )
 
 
 class BundleListResponse(BaseModel):
