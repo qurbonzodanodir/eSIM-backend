@@ -29,6 +29,17 @@ The API is available at `http://127.0.0.1:8000`.
 DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/esim_db
 ```
 
+Use `ENVIRONMENT=development` locally. In production, set a unique
+`JWT_SECRET_KEY` with at least 32 characters and configure real SMS and
+payment providers.
+
+Development adapters are selected by default:
+
+```env
+SMS_PROVIDER=development
+PAYMENT_PROVIDER=development
+```
+
 Monty settings are optional until upstream credentials are available:
 
 ```env

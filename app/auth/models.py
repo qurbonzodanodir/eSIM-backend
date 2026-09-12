@@ -66,6 +66,7 @@ class OtpRequest(Base, ModelMixin):
         DateTime(timezone=True),
         nullable=True,
     )
+    failed_attempts: Mapped[int] = mapped_column(default=0, nullable=False)
     user_id: Mapped[UUID | None] = mapped_column(
         Uuid(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),

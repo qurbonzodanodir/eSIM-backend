@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app._core.config import get_settings
@@ -33,6 +33,20 @@ class AuthService:
 
     async def request_otp(self, phone: str) -> RequestOtpResponse:
         now = datetime.now(UTC)
+        window_start = now - timedelta(
+            seconds=self.settings.otp_rate_limit_window_seconds,
+        )
+        recent_requests = await self.session.scalar(
+            select(func.count(OtpRequest.id)).where(
+                OtpRequest.phone == phone,
+                OtpRequest.created_at >= window_start,
+            )
+        )
+        if recent_requests >= self.settings.otp_max_requests_per_window:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many OTP requests",
+            )
         active_requests = await self.session.scalars(
             select(OtpRequest).where(
                 OtpRequest.phone == phone,
@@ -70,8 +84,16 @@ class AuthService:
             .order_by(OtpRequest.created_at.desc())
         )
         if request is None or not verify_otp(code, request.code_hash):
+            if request is not None:
+                request.failed_attempts += 1
+                if request.failed_attempts >= self.settings.otp_max_attempts:
+                    request.used_at = now
+                await self.session.commit()
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS
+                if request is not None
+                and request.failed_attempts >= self.settings.otp_max_attempts
+                else status.HTTP_400_BAD_REQUEST,
                 detail="Invalid or expired OTP",
             )
 

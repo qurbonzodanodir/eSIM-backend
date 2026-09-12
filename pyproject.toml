@@ -8,6 +8,7 @@ dependencies = [
     "asyncpg>=0.29",
     "fastapi>=0.115",
     "httpx>=0.28",
+    "phonenumbers>=9.0",
     "pydantic-settings>=2.6",
     "pyjwt>=2.9",
     "sqlalchemy[asyncio]>=2.0",

@@ -6,6 +6,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
+from pydantic import ValidationError
 
 from app._core.config import get_settings
 from app.enums.order_status import OrderStatus
@@ -35,10 +37,16 @@ class ResellerService:
             await client.close()
 
         raw_bundles = payload.get("bundles", payload.get("data", []))
-        bundles = [
-            BundleResponse.model_validate(self._normalize_bundle(bundle))
-            for bundle in raw_bundles
-        ]
+        try:
+            bundles = [
+                BundleResponse.model_validate(self._normalize_bundle(bundle))
+                for bundle in raw_bundles
+            ]
+        except (ValidationError, TypeError) as error:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Monty returned an invalid bundles response",
+            ) from error
         return BundleListResponse(bundles=bundles)
 
     async def assign_bundle(
@@ -82,7 +90,23 @@ class ResellerService:
             status=OrderStatus.COMPLETED,
         )
         self.session.add(order)
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+            existing = await self.session.scalar(
+                select(Order).where(
+                    Order.order_reference == request.order_reference,
+                )
+            )
+            if existing is None:
+                raise
+            if existing.user_id != user_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Order reference is already in use",
+                )
+            return OrderResponse.model_validate(existing)
         await self.session.refresh(order)
         return OrderResponse.model_validate(order)
 

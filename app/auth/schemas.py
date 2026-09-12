@@ -1,6 +1,8 @@
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+from pydantic import field_validator
+import phonenumbers
 
 from app._core.schemas import ApiSchema
 from app.enums.kyc_status import KycStatus
@@ -8,6 +10,20 @@ from app.enums.kyc_status import KycStatus
 
 class RequestOtpRequest(BaseModel):
     phone: str = Field(min_length=7, max_length=20)
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        try:
+            parsed = phonenumbers.parse(value, None)
+        except phonenumbers.NumberParseException as error:
+            raise ValueError("Invalid phone number") from error
+        if not phonenumbers.is_valid_number(parsed):
+            raise ValueError("Invalid phone number")
+        return phonenumbers.format_number(
+            parsed,
+            phonenumbers.PhoneNumberFormat.E164,
+        )
 
 
 class RequestOtpResponse(ApiSchema):
@@ -39,6 +55,11 @@ class ProfileResponse(ApiSchema):
 class VerifyOtpRequest(BaseModel):
     phone: str = Field(min_length=7, max_length=20)
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+    @field_validator("phone")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        return RequestOtpRequest.normalize_phone(value)
 
 
 class VerifyOtpResponse(BaseModel):
