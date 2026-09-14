@@ -40,6 +40,20 @@ SMS_PROVIDER=development
 PAYMENT_PROVIDER=development
 ```
 
+For SMS Center, set the provider and its send endpoint:
+
+```env
+SMS_PROVIDER=sms_center
+SMS_API_URL=https://your-host/api/v1/sms/send
+SMS_API_KEY=replace-with-secret
+SMS_SENDER_NAME=TTelecom
+SMS_TIMEOUT_SECONDS=10
+SMS_OTP_TEMPLATE=Your verification code is {code}
+```
+
+The adapter sends `phone_number`, `message` and `source_addr` as JSON and
+authenticates with the `X-API-Key` header.
+
 Monty settings are optional until upstream credentials are available:
 
 ```env

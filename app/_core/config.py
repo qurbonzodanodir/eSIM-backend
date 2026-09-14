@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     sms_api_url: str | None = None
     sms_api_key: str | None = None
     sms_sender_name: str | None = None
+    sms_timeout_seconds: float = 10.0
+    sms_otp_template: str = "Your verification code is {code}"
     payment_provider: str = "development"
     otp_max_requests_per_window: int = 3
     otp_rate_limit_window_seconds: int = 900
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
                 raise ValueError("JWT_SECRET_KEY must be changed in production")
             if self.sms_provider == "development":
                 raise ValueError("SMS_PROVIDER must use a real provider in production")
+            if not self.sms_api_url or not self.sms_api_key or not self.sms_sender_name:
+                raise ValueError(
+                    "SMS_API_URL, SMS_API_KEY and SMS_SENDER_NAME are required"
+                )
             if self.payment_provider == "development":
                 raise ValueError(
                     "PAYMENT_PROVIDER must use a real provider in production"

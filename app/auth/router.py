@@ -12,7 +12,7 @@ from app.auth.schemas import (
     VerifyOtpResponse,
 )
 from app.auth.service import AuthService
-from app.integrations.sms import DevelopmentSmsSender
+from app.integrations.sms import get_sms_sender
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -21,7 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def get_auth_service(
     session: AsyncSession = Depends(get_session),
 ) -> AuthService:
-    return AuthService(session, DevelopmentSmsSender())
+    return AuthService(session, get_sms_sender())
 
 
 @router.post("/request-otp", response_model=RequestOtpResponse)
