@@ -20,6 +20,13 @@ class OrderResponse(BaseModel):
     created_at: datetime
 
 
+class OrderHistoryResponse(BaseModel):
+    orders: list[OrderResponse]
+    total: int
+    page_number: int
+    page_size: int
+
+
 class BundleResponse(BaseModel):
     bundle_code: str
     bundle_name: str
@@ -33,6 +40,8 @@ class AssignBundleRequest(BaseModel):
     bundle_code: str
     email: str | None = None
     name: str | None = None
+    payment_method: str | None = None
+    currency_code: str | None = None
     whatsapp_number: str | None = Field(
         default=None,
         validation_alias=AliasChoices("whatsapp_number", "whatsapp"),

@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -8,6 +9,7 @@ from app.profile.router import get_current_user_id
 from app.reseller.schemas import (
     AssignBundleRequest,
     BundleListResponse,
+    OrderHistoryResponse,
     OrderResponse,
     UpstreamResponse,
 )
@@ -54,26 +56,24 @@ async def assign_bundle(
     return await ResellerService(session).assign_bundle(user_id, payload)
 
 
-@router.get("/orders", response_model=UpstreamResponse)
+@router.get("/orders", response_model=OrderHistoryResponse)
 async def get_orders(
     order_id: str | None = Query(default=None),
     order_reference: str | None = Query(default=None),
-    startDate: str | None = Query(default=None),
-    endDate: str | None = Query(default=None),
-    currency_code: str | None = Query(default=None),
+    startDate: datetime | None = Query(default=None),
+    endDate: datetime | None = Query(default=None),
     page_number: int | None = Query(default=None, ge=1),
     page_size: int | None = Query(default=None, ge=1),
     session: AsyncSession = Depends(get_session),
     user_id: UUID = Depends(get_current_user_id),
-) -> UpstreamResponse:
+) -> OrderHistoryResponse:
     filters = {
         key: value
         for key, value in {
             "order_id": order_id,
             "order_reference": order_reference,
-            "startDate": startDate,
-            "endDate": endDate,
-            "currency_code": currency_code,
+            "start_date": startDate,
+            "end_date": endDate,
             "page_number": page_number,
             "page_size": page_size,
         }.items()

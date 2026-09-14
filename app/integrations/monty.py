@@ -14,17 +14,12 @@ class MontyError(Exception):
 
 
 class MontyClient:
-    def __init__(
-        self,
-        access_token: str | None = None,
-        client: httpx.AsyncClient | None = None,
-    ) -> None:
+    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         settings = get_settings()
-        if not settings.monty_base_url:
+        if not settings.monty_tenant or not settings.monty_api_key:
             raise MontyError(503, "Monty integration is not configured")
-        self.access_token = access_token
+        self._settings = settings
         self._client = client or httpx.AsyncClient(
-            base_url=settings.monty_base_url.rstrip("/"),
             timeout=settings.monty_timeout_seconds,
         )
         self._owns_client = client is None
@@ -33,41 +28,56 @@ class MontyClient:
         if self._owns_client:
             await self._client.aclose()
 
-    async def login(self) -> Mapping[str, Any]:
-        settings = get_settings()
-        if not settings.monty_username or not settings.monty_password:
-            raise MontyError(503, "Monty credentials are not configured")
+    async def get_bundles(self, **filters: Any) -> Mapping[str, Any]:
+        return await self._request(
+            "GET",
+            "/Bundle/get-all-basic/active",
+            base_url=self._settings.monty_catalog_base_url,
+            params=filters,
+            api_key=True,
+        )
+
+    async def get_bundles_with_currency(
+        self,
+        currency_code: str,
+        **filters: Any,
+    ) -> Mapping[str, Any]:
+        return await self._request(
+            "GET",
+            "/Bundle/get-all-with-currency/active",
+            base_url=self._settings.monty_catalog_base_url,
+            params={"currencyCode": currency_code, **filters},
+            bearer=True,
+        )
+
+    async def create_order(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return await self._request(
             "POST",
-            "/Agent/login",
-            json={
-                "username": settings.monty_username,
-                "password": settings.monty_password,
-            },
-            authenticated=False,
+            "/order/create",
+            base_url=self._settings.monty_core_base_url,
+            json=dict(payload),
+            api_key=True,
         )
 
-    async def get_bundles(self, **filters: Any) -> Mapping[str, Any]:
-        return await self._request("GET", "/Bundles", params=filters)
-
-    async def assign_bundle(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
-        return await self._request("POST", "/Bundles", json=dict(payload))
-
-    async def get_orders(self, **filters: Any) -> Mapping[str, Any]:
-        return await self._request("GET", "/Orders", params=filters)
-
-    async def get_consumption(self, **filters: Any) -> Mapping[str, Any]:
+    async def top_up(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:
         return await self._request(
-            "GET",
-            "/Orders/Consumption",
-            params=filters,
+            "POST",
+            "/order/topup",
+            base_url=self._settings.monty_core_base_url,
+            json=dict(payload),
+            api_key=True,
         )
 
-    async def get_available_topups(self, **filters: Any) -> Mapping[str, Any]:
+    async def get_compatible_topups(
+        self,
+        **filters: Any,
+    ) -> Mapping[str, Any]:
         return await self._request(
             "GET",
-            "/Bundles/AvailableTopup",
+            "/order/compatible-topup-with-currency",
+            base_url=self._settings.monty_core_base_url,
             params=filters,
+            api_key=True,
         )
 
     async def _request(
@@ -75,26 +85,37 @@ class MontyClient:
         method: str,
         path: str,
         *,
-        authenticated: bool = True,
+        base_url: str,
+        api_key: bool = False,
+        bearer: bool = False,
         **kwargs: Any,
     ) -> Mapping[str, Any]:
         headers = dict(kwargs.pop("headers", {}))
-        if authenticated and self.access_token:
-            headers["Authorization"] = f"Bearer {self.access_token}"
+        headers["Tenant"] = self._settings.monty_tenant
+        if api_key:
+            headers["api-key"] = self._settings.monty_api_key
+        if bearer and self._settings.monty_bearer_token:
+            headers["Authorization"] = (
+                f"Bearer {self._settings.monty_bearer_token}"
+            )
         try:
             response = await self._client.request(
                 method,
-                path,
+                f"{base_url.rstrip('/')}/{path.lstrip('/')}",
                 headers=headers,
                 **kwargs,
             )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            raise MontyError(
+                error.response.status_code,
+                "Monty request failed",
+            ) from error
         except httpx.HTTPError as error:
             raise MontyError(502, "Monty is unavailable") from error
 
         if response.status_code == 204:
             return {}
-        if response.status_code >= 400:
-            raise MontyError(response.status_code, "Monty request failed")
         try:
             data = response.json()
         except ValueError as error:

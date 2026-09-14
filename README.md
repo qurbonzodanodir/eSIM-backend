@@ -54,14 +54,30 @@ SMS_OTP_TEMPLATE=Your verification code is {code}
 The adapter sends `phone_number`, `message` and `source_addr` as JSON and
 authenticates with the `X-API-Key` header.
 
-Monty settings are optional until upstream credentials are available:
+Monty settings are configured through environment variables; secrets are never
+stored in source code:
 
 ```env
-MONTY_BASE_URL=
-MONTY_USERNAME=
-MONTY_PASSWORD=
+MONTY_CATALOG_BASE_URL=https://apis.montytelecom.com/catalog/api/reseller/v1
+MONTY_CORE_BASE_URL=https://mm-hub-api.montytelecom.com/core/api/v1
+MONTY_TENANT=
+MONTY_API_KEY=
+MONTY_BEARER_TOKEN=
 MONTY_TIMEOUT_SECONDS=10
 ```
+
+The current Monty client uses the documented bundle and order endpoints:
+`/Bundle/get-all-basic/active`, `/Bundle/get-all-with-currency/active`,
+`/order/create`, `/order/topup`, and
+`/order/compatible-topup-with-currency`. Order history and consumption are
+not implemented until Monty provides those endpoints in the current API
+specification.
+
+`GET /reseller/orders` returns the authenticated user's local order history
+from PostgreSQL. It supports `order_id`, `order_reference`, `startDate`,
+`endDate`, `page_number`, and `page_size`. `GET
+/reseller/orders/consumption` remains unavailable until Monty documents a
+consumption endpoint.
 
 ## Main endpoints
 

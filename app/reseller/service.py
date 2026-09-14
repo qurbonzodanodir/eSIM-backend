@@ -1,24 +1,23 @@
 from collections.abc import Mapping
-from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from pydantic import ValidationError
 
-from app._core.config import get_settings
 from app.enums.order_status import OrderStatus
 from app.integrations.monty import MontyClient, MontyError
-from app.reseller.models import Order, ResellerSession
+from app.reseller.models import Order
 from app.profile.models import User
 from app.reseller.schemas import (
     AssignBundleRequest,
     BundleListResponse,
     BundleResponse,
     OrderResponse,
+    OrderHistoryResponse,
     UpstreamResponse,
 )
 
@@ -69,13 +68,16 @@ class ResellerService:
 
         client = await self._get_client()
         try:
-            payload = await client.assign_bundle(
+            payload = await client.create_order(
                 {
-                    "bundle_code": request.bundle_code,
-                    "email": request.email,
-                    "name": request.name,
-                    "order_reference": request.order_reference,
-                    "whatsapp_number": request.whatsapp_number,
+                    "ServiceTag": "ESIM",
+                    "BundleGuid": request.bundle_code,
+                    "UniqueIdentifier": request.order_reference,
+                    "PhoneNumber": request.whatsapp_number,
+                    "ClientName": request.name,
+                    "Email": request.email,
+                    "PaymentMethod": request.payment_method,
+                    "CurrencyCode": request.currency_code,
                 }
             )
         except MontyError as error:
@@ -116,9 +118,40 @@ class ResellerService:
         self,
         user_id: UUID,
         filters: Mapping[str, Any],
-    ) -> UpstreamResponse:
+    ) -> OrderHistoryResponse:
         await self._ensure_user(user_id)
-        return await self._proxy("get_orders", filters)
+        conditions = [Order.user_id == user_id]
+        order_id = filters.get("order_id")
+        order_reference = filters.get("order_reference")
+        start_date = filters.get("start_date")
+        end_date = filters.get("end_date")
+        if order_id is not None:
+            conditions.append(Order.monty_order_id == order_id)
+        if order_reference is not None:
+            conditions.append(Order.order_reference == order_reference)
+        if start_date is not None:
+            conditions.append(Order.created_at >= start_date)
+        if end_date is not None:
+            conditions.append(Order.created_at <= end_date)
+
+        total = await self.session.scalar(
+            select(func.count(Order.id)).where(*conditions)
+        )
+        page_number = int(filters.get("page_number") or 1)
+        page_size = int(filters.get("page_size") or 50)
+        orders = await self.session.scalars(
+            select(Order)
+            .where(*conditions)
+            .order_by(Order.created_at.desc())
+            .offset((page_number - 1) * page_size)
+            .limit(page_size)
+        )
+        return OrderHistoryResponse(
+            orders=[OrderResponse.model_validate(order) for order in orders],
+            total=total or 0,
+            page_number=page_number,
+            page_size=page_size,
+        )
 
     async def get_consumption(
         self,
@@ -126,7 +159,10 @@ class ResellerService:
         filters: Mapping[str, Any],
     ) -> UpstreamResponse:
         await self._ensure_user(user_id)
-        return await self._proxy("get_consumption", filters)
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="Monty consumption is not documented in the current API",
+        )
 
     async def get_available_topups(
         self,
@@ -134,7 +170,7 @@ class ResellerService:
         filters: Mapping[str, Any],
     ) -> UpstreamResponse:
         await self._ensure_user(user_id)
-        return await self._proxy("get_available_topups", filters)
+        return await self._proxy("get_compatible_topups", filters)
 
     async def _proxy(
         self,
@@ -164,41 +200,7 @@ class ResellerService:
             )
 
     async def _get_client(self) -> MontyClient:
-        now = datetime.now(UTC)
-        session = await self.session.scalar(
-            select(ResellerSession).order_by(
-                ResellerSession.created_at.desc()
-            )
-        )
-        if session is not None and session.expires_at > now:
-            return MontyClient(access_token=session.access_token)
-
-        client = MontyClient()
-        try:
-            payload = await client.login()
-        except MontyError:
-            await client.close()
-            raise
-        access_token = payload.get("access_token")
-        if not isinstance(access_token, str) or not access_token:
-            raise MontyError(502, "Monty login returned no access token")
-        client.access_token = access_token
-        expires_in = payload.get("expires_in")
-        if not isinstance(expires_in, int) or expires_in <= 0:
-            expires_in = get_settings().monty_session_expire_seconds
-        values = {
-            "access_token": access_token,
-            "refresh_token": self._value(payload, "refresh_token"),
-            "reseller_id": self._value(payload, "reseller_id"),
-            "expires_at": now + timedelta(seconds=expires_in),
-        }
-        if session is None:
-            self.session.add(ResellerSession(**values))
-        else:
-            for field, value in values.items():
-                setattr(session, field, value)
-        await self.session.commit()
-        return client
+        return MontyClient()
 
     @staticmethod
     def _normalize_bundle(bundle: Any) -> dict[str, Any]:

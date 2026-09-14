@@ -14,11 +14,14 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     otp_expire_minutes: int = 5
-    monty_base_url: str | None = None
-    monty_username: str | None = None
-    monty_password: str | None = None
+    monty_catalog_base_url: str = (
+        "https://apis.montytelecom.com/catalog/api/reseller/v1"
+    )
+    monty_core_base_url: str = "https://mm-hub-api.montytelecom.com/core/api/v1"
+    monty_tenant: str | None = None
+    monty_api_key: str | None = None
+    monty_bearer_token: str | None = None
     monty_timeout_seconds: float = 10.0
-    monty_session_expire_seconds: int = 3600
     sms_provider: str = "development"
     sms_api_url: str | None = None
     sms_api_key: str | None = None
@@ -56,6 +59,10 @@ class Settings(BaseSettings):
             if self.payment_provider == "development":
                 raise ValueError(
                     "PAYMENT_PROVIDER must use a real provider in production"
+                )
+            if not self.monty_tenant or not self.monty_api_key:
+                raise ValueError(
+                    "MONTY_TENANT and MONTY_API_KEY are required in production"
                 )
         return self
 
