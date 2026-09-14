@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.exceptions import RequestValidationError
+from fastapi.exceptions import HTTPException, RequestValidationError
 from sqlalchemy import text
 
 from app._core.database import session_factory
 from app._core.config import get_settings
 from app._core.errors import (
+    http_exception_handler,
     integrity_error_handler,
     request_validation_error_handler,
     validation_error_handler,
@@ -35,6 +36,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     application.add_exception_handler(ValidationError, validation_error_handler)
+    application.add_exception_handler(HTTPException, http_exception_handler)
     application.add_exception_handler(
         RequestValidationError,
         request_validation_error_handler,

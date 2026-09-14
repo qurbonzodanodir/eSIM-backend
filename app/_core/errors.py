@@ -1,8 +1,24 @@
 from fastapi import Request
+from fastapi import HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
+
+
+async def http_exception_handler(
+    request: Request,
+    error: HTTPException,
+) -> JSONResponse:
+    content = {
+        "error": "http_error",
+        "detail": error.detail,
+    }
+    return JSONResponse(
+        status_code=error.status_code,
+        content=content,
+        headers=error.headers,
+    )
 
 
 async def validation_error_handler(

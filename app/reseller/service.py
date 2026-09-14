@@ -176,7 +176,7 @@ class ResellerService:
         client = MontyClient()
         try:
             payload = await client.login()
-        except Exception:
+        except MontyError:
             await client.close()
             raise
         access_token = payload.get("access_token")
