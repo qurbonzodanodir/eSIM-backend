@@ -19,3 +19,8 @@ class UserNumberResponse(ApiSchema):
     operator: str
     product: str
     active: bool
+
+
+
+class KycMockResultRequest(ApiSchema):
+    status: KycStatus
