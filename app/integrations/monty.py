@@ -29,11 +29,23 @@ class MontyClient:
             await self._client.aclose()
 
     async def get_bundles(self, **filters: Any) -> Mapping[str, Any]:
+        params = {
+            key: value
+            for key, value in {
+                "pageSize": filters.get("page_size"),
+                "pageIndex": filters.get("page_number"),
+                "CurrencyCode": filters.get("currency_code"),
+                "BundleCode": filters.get("bundle_code"),
+                "BundleCategoryTag": filters.get("bundle_category"),
+                "Search": filters.get("bundle_name"),
+            }.items()
+            if value is not None
+        }
         return await self._request(
             "GET",
             "/Bundle/get-all-basic/active",
             base_url=self._settings.monty_catalog_base_url,
-            params=filters,
+            params=params,
             api_key=True,
         )
 

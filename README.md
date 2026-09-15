@@ -93,12 +93,21 @@ GET  /api/v1/catalog/operators
 GET  /api/v1/catalog/operators/{operator_id}
 GET  /api/v1/catalog/operators/{operator_id}/premium-numbers
 GET  /api/v1/reseller/bundles
+GET  /api/v1/reseller/countries
 POST /api/v1/reseller/bundles/assign
 GET  /api/v1/reseller/orders
 GET  /api/v1/reseller/orders/consumption
 GET  /api/v1/reseller/bundles/available-topup
 GET  /health
 ```
+
+The reseller bundle response exposes `price` as the customer-facing price.
+Monty `cost` is an internal value and is not returned to the mobile app.
+When assigning a bundle, the client must send `bundle_guid` from `recordGuid`;
+`bundle_code` is a separate catalog identifier and must not be used as the GUID.
+The reseller countries endpoint currently returns a manually curated list of
+popular countries. Its score is temporary presentation data and can later be
+replaced with order and usage statistics.
 
 The development SMS and payment adapters are placeholders. Real provider adapters can be added without changing the auth or profile services.
 

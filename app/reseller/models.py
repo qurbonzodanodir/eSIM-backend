@@ -29,6 +29,11 @@ class Order(Base, ModelMixin):
         index=True,
     )
     bundle_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    bundle_guid: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
     monty_order_id: Mapped[str | None] = mapped_column(
         String(100),
         unique=True,

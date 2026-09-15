@@ -18,13 +18,96 @@ from app.reseller.schemas import (
     BundleResponse,
     OrderResponse,
     OrderHistoryResponse,
+    PopularCountryListResponse,
+    PopularCountryResponse,
     UpstreamResponse,
+)
+
+POPULAR_COUNTRIES = (
+    {
+        "country_code": "TR",
+        "country_name": "Turkey",
+        "flag": "🇹🇷",
+        "operators": ["Turkcell", "Vodafone TR"],
+        "popularity_score": 100,
+    },
+    {
+        "country_code": "AE",
+        "country_name": "United Arab Emirates",
+        "flag": "🇦🇪",
+        "operators": ["Etisalat", "du"],
+        "popularity_score": 90,
+    },
+    {
+        "country_code": "KZ",
+        "country_name": "Kazakhstan",
+        "flag": "🇰🇿",
+        "operators": ["Kcell", "Beeline KZ", "Tele2"],
+        "popularity_score": 80,
+    },
+    {
+        "country_code": "CN",
+        "country_name": "China",
+        "flag": "🇨🇳",
+        "operators": ["China Mobile", "China Unicom"],
+        "popularity_score": 70,
+    },
+    {
+        "country_code": "UZ",
+        "country_name": "Uzbekistan",
+        "flag": "🇺🇿",
+        "operators": ["Ucell", "Beeline UZ"],
+        "popularity_score": 60,
+    },
+    {
+        "country_code": "SA",
+        "country_name": "Saudi Arabia",
+        "flag": "🇸🇦",
+        "operators": ["STC", "Zain", "Mobily"],
+        "popularity_score": 50,
+    },
+    {
+        "country_code": "KG",
+        "country_name": "Kyrgyzstan",
+        "flag": "🇰🇬",
+        "operators": ["Beeline KG", "MegaCom"],
+        "popularity_score": 40,
+    },
+    {
+        "country_code": "QA",
+        "country_name": "Qatar",
+        "flag": "🇶🇦",
+        "operators": ["Ooredoo", "Vodafone QA"],
+        "popularity_score": 30,
+    },
+    {
+        "country_code": "DE",
+        "country_name": "Germany",
+        "flag": "🇩🇪",
+        "operators": ["Telekom", "Vodafone DE"],
+        "popularity_score": 20,
+    },
+    {
+        "country_code": "PL",
+        "country_name": "Poland",
+        "flag": "🇵🇱",
+        "operators": ["Orange", "Play"],
+        "popularity_score": 10,
+    },
 )
 
 
 class ResellerService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+
+    async def list_popular_countries(self) -> PopularCountryListResponse:
+        return PopularCountryListResponse(
+            countries=[
+                PopularCountryResponse.model_validate(country)
+                for country in POPULAR_COUNTRIES
+            ]
+        )
 
     async def list_bundles(self, filters: Mapping[str, Any]) -> BundleListResponse:
         client = await self._get_client()
@@ -35,7 +118,12 @@ class ResellerService:
         finally:
             await client.close()
 
-        raw_bundles = payload.get("bundles", payload.get("data", []))
+        data = payload.get("data")
+        raw_bundles = (
+            data.get("items", [])
+            if isinstance(data, dict)
+            else payload.get("bundles", [])
+        )
         try:
             bundles = [
                 BundleResponse.model_validate(self._normalize_bundle(bundle))
@@ -46,7 +134,23 @@ class ResellerService:
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail="Monty returned an invalid bundles response",
             ) from error
-        return BundleListResponse(bundles=bundles)
+        requested_page = int(filters.get("page_number") or 1)
+        requested_size = filters.get("page_size")
+        total = (
+            data.get("totalRows", len(bundles))
+            if isinstance(data, dict)
+            else len(bundles)
+        )
+        return BundleListResponse(
+            bundles=bundles,
+            total=int(total),
+            page_number=int(
+                data.get("pageIndex", requested_page)
+                if isinstance(data, dict)
+                else requested_page
+            ),
+            page_size=int(requested_size or len(bundles)),
+        )
 
     async def assign_bundle(
         self,
@@ -71,7 +175,7 @@ class ResellerService:
             payload = await client.create_order(
                 {
                     "ServiceTag": "ESIM",
-                    "BundleGuid": request.bundle_code,
+                    "BundleGuid": request.bundle_guid,
                     "UniqueIdentifier": request.order_reference,
                     "PhoneNumber": request.whatsapp_number,
                     "ClientName": request.name,
@@ -88,7 +192,8 @@ class ResellerService:
         order = Order(
             user_id=user_id,
             order_reference=request.order_reference,
-            bundle_code=request.bundle_code,
+            bundle_code=request.bundle_code or request.bundle_guid,
+            bundle_guid=request.bundle_guid,
             monty_order_id=self._value(payload, "order_id", "monty_order_id"),
             iccid=self._value(payload, "iccid"),
             status=OrderStatus.COMPLETED,
@@ -210,15 +315,63 @@ class ResellerService:
                 detail="Monty returned an invalid bundle",
             )
         return {
-            "bundle_code": bundle.get("bundle_code", bundle.get("code")),
-            "bundle_name": bundle.get("bundle_name", bundle.get("name")),
-            "reseller_retail_price": bundle.get(
-                "reseller_retail_price",
-                bundle.get("price"),
+            "bundle_guid": bundle.get("recordGuid"),
+            "bundle_code": (
+                bundle.get("bundleInfo", {}).get("bundleCode")
+                if isinstance(bundle.get("bundleInfo"), dict)
+                else bundle.get("bundle_code", bundle.get("code"))
             ),
-            "validity": bundle.get("validity"),
-            "data_unit": bundle.get("data_unit"),
+            "bundle_name": bundle.get(
+                "bundleDisplayName",
+                bundle.get("bundle_name", bundle.get("name")),
+            ),
+            "country_code": ResellerService._nested_value(
+                bundle.get("supportedCountries"),
+                "isoCode",
+            ),
+            "country_name": ResellerService._nested_value(
+                bundle.get("supportedCountries"),
+                "name",
+            ),
+            "provider_name": ResellerService._nested_value(
+                [bundle.get("provider")],
+                "name",
+            ),
+            "data_amount": (
+                bundle.get("bundleInfo", {}).get("gprsLimit")
+                if isinstance(bundle.get("bundleInfo"), dict)
+                else None
+            ),
+            "price": bundle.get("price"),
+            "currency_code": (
+                bundle.get("currency", {}).get("currencyCode")
+                if isinstance(bundle.get("currency"), dict)
+                else None
+            ),
+            "validity": ResellerService._nested_value(
+                bundle.get("validityPeriodCycle", {}).get("details", [])
+                if isinstance(bundle.get("validityPeriodCycle"), dict)
+                else [],
+                "name",
+            ),
+            "data_unit": (
+                bundle.get("bundleInfo", {}).get("dataUnit")
+                if isinstance(bundle.get("bundleInfo"), dict)
+                else None
+            ),
+            "support_topup": (
+                bundle.get("bundleInfo", {}).get("supportTopup")
+                if isinstance(bundle.get("bundleInfo"), dict)
+                else None
+            ),
         }
+
+    @staticmethod
+    def _nested_value(items: Any, key: str) -> Any:
+        if not isinstance(items, list) or not items:
+            return None
+        item = items[0]
+        return item.get(key) if isinstance(item, dict) else None
 
     @staticmethod
     def _value(payload: Mapping[str, Any], *keys: str) -> str | None:
