@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 from pydantic import field_validator
 import phonenumbers
 
-from app._core.schemas import ApiSchema
+from app.core.schemas import ApiSchema
 from app.enums.kyc_status import KycStatus
 
 

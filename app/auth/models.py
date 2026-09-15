@@ -4,7 +4,7 @@ from uuid import UUID
 from sqlalchemy import DateTime, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app._core.models import Base, ModelMixin
+from app.core.models import Base, ModelMixin
 
 from typing import TYPE_CHECKING
 

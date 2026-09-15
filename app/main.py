@@ -3,15 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import HTTPException, RequestValidationError
 from sqlalchemy import text
 
-from app._core.database import session_factory
-from app._core.config import get_settings
-from app._core.errors import (
+from app.core.database import session_factory
+from app.core.config import get_settings
+from app.core.errors import (
     http_exception_handler,
     integrity_error_handler,
     request_validation_error_handler,
     validation_error_handler,
 )
-from app._core.logging import configure_logging
+from app.core.logging import configure_logging
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
 from app.profile.router import router as profile_router
@@ -42,10 +42,11 @@ def create_app() -> FastAPI:
         request_validation_error_handler,
     )
     application.add_exception_handler(IntegrityError, integrity_error_handler)
-    application.include_router(auth_router)
-    application.include_router(catalog_router)
-    application.include_router(profile_router)
-    application.include_router(reseller_router)
+    api_prefix = "/api/v1"
+    application.include_router(auth_router, prefix=api_prefix)
+    application.include_router(catalog_router, prefix=api_prefix)
+    application.include_router(profile_router, prefix=api_prefix)
+    application.include_router(reseller_router, prefix=api_prefix)
 
     @application.get("/health")
     async def health_check() -> dict[str, str]:

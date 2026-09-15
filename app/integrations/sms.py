@@ -2,7 +2,7 @@ from typing import Protocol
 
 import httpx
 
-from app._core.config import get_settings
+from app.core.config import get_settings
 
 
 class SmsSender(Protocol):

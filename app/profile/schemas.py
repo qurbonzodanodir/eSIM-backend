@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from app._core.schemas import ApiSchema
+from app.core.schemas import ApiSchema
 from app.enums.kyc_status import KycStatus
 
 

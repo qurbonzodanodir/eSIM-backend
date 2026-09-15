@@ -82,21 +82,21 @@ consumption endpoint.
 ## Main endpoints
 
 ```text
-POST /auth/request-otp
-POST /auth/verify-otp
-POST /auth/refresh
-POST /auth/logout
-GET  /profile
-POST /profile/kyc/request
-POST /profile/kyc/mock-result (development only)
-GET  /catalog/operators
-GET  /catalog/operators/{operator_id}
-GET  /catalog/operators/{operator_id}/premium-numbers
-GET  /reseller/bundles
-POST /reseller/bundles/assign
-GET  /reseller/orders
-GET  /reseller/orders/consumption
-GET  /reseller/bundles/available-topup
+POST /api/v1/auth/request-otp
+POST /api/v1/auth/verify-otp
+POST /api/v1/auth/refresh
+POST /api/v1/auth/logout
+GET  /api/v1/profile
+POST /api/v1/profile/kyc/request
+POST /api/v1/profile/kyc/mock-result (development only)
+GET  /api/v1/catalog/operators
+GET  /api/v1/catalog/operators/{operator_id}
+GET  /api/v1/catalog/operators/{operator_id}/premium-numbers
+GET  /api/v1/reseller/bundles
+POST /api/v1/reseller/bundles/assign
+GET  /api/v1/reseller/orders
+GET  /api/v1/reseller/orders/consumption
+GET  /api/v1/reseller/bundles/available-topup
 GET  /health
 ```
 

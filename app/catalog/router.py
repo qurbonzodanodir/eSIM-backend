@@ -1,9 +1,8 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app._core.database import get_session
+from app.core.dependencies import get_catalog_service
 from app.catalog.schemas import OperatorResponse, PremiumNumberResponse
 from app.catalog.service import CatalogService
 
@@ -13,9 +12,9 @@ router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 @router.get("/operators", response_model=list[OperatorResponse])
 async def list_operators(
-    session: AsyncSession = Depends(get_session),
+    service: CatalogService = Depends(get_catalog_service),
 ) -> list[OperatorResponse]:
-    return await CatalogService(session).list_operators()
+    return await service.list_operators()
 
 
 @router.get(
@@ -24,9 +23,9 @@ async def list_operators(
 )
 async def get_operator(
     operator_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    service: CatalogService = Depends(get_catalog_service),
 ) -> OperatorResponse:
-    return await CatalogService(session).get_operator(operator_id)
+    return await service.get_operator(operator_id)
 
 
 @router.get(
@@ -35,6 +34,6 @@ async def get_operator(
 )
 async def list_premium_numbers(
     operator_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    service: CatalogService = Depends(get_catalog_service),
 ) -> list[PremiumNumberResponse]:
-    return await CatalogService(session).list_premium_numbers(operator_id)
+    return await service.list_premium_numbers(operator_id)

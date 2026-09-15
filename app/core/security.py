@@ -7,7 +7,7 @@ from uuid import UUID
 import jwt
 from fastapi import HTTPException, status
 
-from app._core.config import get_settings
+from app.core.config import get_settings
 
 
 def generate_otp() -> str:

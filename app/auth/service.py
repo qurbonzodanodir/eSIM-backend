@@ -5,8 +5,8 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app._core.config import get_settings
-from app._core.security import (
+from app.core.config import get_settings
+from app.core.security import (
     create_access_token,
     generate_otp,
     generate_refresh_token,

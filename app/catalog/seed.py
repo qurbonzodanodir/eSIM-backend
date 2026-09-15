@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from sqlalchemy import delete, select
 
-from app._core.database import session_factory
+from app.core.database import session_factory
 from app.catalog.models import Operator, PremiumNumber, Tariff
 from app.enums.premium_number_tier import PremiumNumberTier
 

@@ -2,9 +2,8 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app._core.database import get_session
+from app.core.dependencies import get_reseller_service
 from app.profile.router import get_current_user_id
 from app.reseller.schemas import (
     AssignBundleRequest,
@@ -28,7 +27,7 @@ async def list_bundles(
     currency_code: str | None = Query(default=None),
     page_number: int | None = Query(default=None, ge=1),
     page_size: int | None = Query(default=None, ge=1),
-    session: AsyncSession = Depends(get_session),
+    service: ResellerService = Depends(get_reseller_service),
     _: UUID = Depends(get_current_user_id),
 ) -> BundleListResponse:
     filters = {
@@ -44,16 +43,16 @@ async def list_bundles(
         }.items()
         if value is not None
     }
-    return await ResellerService(session).list_bundles(filters)
+    return await service.list_bundles(filters)
 
 
 @router.post("/bundles/assign", response_model=OrderResponse)
 async def assign_bundle(
     payload: AssignBundleRequest,
     user_id: UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_session),
+    service: ResellerService = Depends(get_reseller_service),
 ) -> OrderResponse:
-    return await ResellerService(session).assign_bundle(user_id, payload)
+    return await service.assign_bundle(user_id, payload)
 
 
 @router.get("/orders", response_model=OrderHistoryResponse)
@@ -64,7 +63,7 @@ async def get_orders(
     endDate: datetime | None = Query(default=None),
     page_number: int | None = Query(default=None, ge=1),
     page_size: int | None = Query(default=None, ge=1),
-    session: AsyncSession = Depends(get_session),
+    service: ResellerService = Depends(get_reseller_service),
     user_id: UUID = Depends(get_current_user_id),
 ) -> OrderHistoryResponse:
     filters = {
@@ -79,16 +78,16 @@ async def get_orders(
         }.items()
         if value is not None
     }
-    return await ResellerService(session).get_orders(user_id, filters)
+    return await service.get_orders(user_id, filters)
 
 
 @router.get("/orders/consumption", response_model=UpstreamResponse)
 async def get_consumption(
     order_id: str = Query(min_length=1),
-    session: AsyncSession = Depends(get_session),
+    service: ResellerService = Depends(get_reseller_service),
     user_id: UUID = Depends(get_current_user_id),
 ) -> UpstreamResponse:
-    return await ResellerService(session).get_consumption(
+    return await service.get_consumption(
         user_id,
         {"order_id": order_id},
     )
@@ -99,7 +98,7 @@ async def get_available_topups(
     bundle_code: str = Query(min_length=1),
     country_code: str | None = Query(default=None),
     currency_code: str | None = Query(default=None),
-    session: AsyncSession = Depends(get_session),
+    service: ResellerService = Depends(get_reseller_service),
     user_id: UUID = Depends(get_current_user_id),
 ) -> UpstreamResponse:
     filters = {
@@ -111,4 +110,4 @@ async def get_available_topups(
         }.items()
         if value is not None
     }
-    return await ResellerService(session).get_available_topups(user_id, filters)
+    return await service.get_available_topups(user_id, filters)

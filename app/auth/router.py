@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app._core.database import get_session
+from app.core.dependencies import get_auth_sms_sender
+from app.core.database import get_session
 from app.auth.schemas import (
     RequestOtpRequest,
     RequestOtpResponse,
@@ -12,7 +13,7 @@ from app.auth.schemas import (
     VerifyOtpResponse,
 )
 from app.auth.service import AuthService
-from app.integrations.sms import get_sms_sender
+from app.integrations.sms import SmsSender
 
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -20,8 +21,9 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 def get_auth_service(
     session: AsyncSession = Depends(get_session),
+    sms_sender: SmsSender = Depends(get_auth_sms_sender),
 ) -> AuthService:
-    return AuthService(session, get_sms_sender())
+    return AuthService(session, sms_sender)
 
 
 @router.post("/request-otp", response_model=RequestOtpResponse)

@@ -4,8 +4,8 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app._core.config import get_settings
-from app._core.models import Base
+from app.core.config import get_settings
+from app.core.models import Base
 from app.auth import models as auth_models
 from app.profile import models as profile_models
 from app.catalog import models as catalog_models

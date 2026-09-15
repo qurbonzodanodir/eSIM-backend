@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app._core.models import Base, ModelMixin, SoftDeleteMixin
+from app.core.models import Base, ModelMixin, SoftDeleteMixin
 from app.enums.kyc_status import KycStatus
 
 from typing import TYPE_CHECKING

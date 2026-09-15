@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app._core.models import Base, ModelMixin
+from app.core.models import Base, ModelMixin
 from app.enums.order_status import OrderStatus
 
 if TYPE_CHECKING:
