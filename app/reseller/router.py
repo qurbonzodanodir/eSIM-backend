@@ -17,14 +17,15 @@ from app.reseller.service import ResellerService
 
 
 router = APIRouter(prefix="/reseller", tags=["reseller"])
+countries_router = APIRouter(prefix="/countries", tags=["countries"])
 
 
-@router.get("/countries", response_model=PopularCountryListResponse)
+@countries_router.get("", response_model=PopularCountryListResponse)
 async def list_popular_countries(
     service: ResellerService = Depends(get_reseller_service),
     _: UUID = Depends(get_current_user_id),
 ) -> PopularCountryListResponse:
-    return await service.list_popular_countries()
+    return await service.list_countries()
 
 
 @router.get("/bundles", response_model=BundleListResponse)

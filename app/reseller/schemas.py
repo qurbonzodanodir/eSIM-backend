@@ -67,6 +67,7 @@ class BundleListResponse(BaseModel):
 class PopularCountryResponse(BaseModel):
     country_code: str
     country_name: str
+    region: str
     flag: str
     operators: list[str]
     popularity_score: int

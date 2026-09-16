@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from app.enums.order_status import OrderStatus
 from app.integrations.monty import MontyClient, MontyError
 from app.reseller.models import Order
+from app.reseller.country_models import Country
 from app.profile.models import User
 from app.reseller.schemas import (
     AssignBundleRequest,
@@ -23,96 +24,117 @@ from app.reseller.schemas import (
     UpstreamResponse,
 )
 
-POPULAR_COUNTRIES = (
-    {
-        "country_code": "TR",
-        "country_name": "Turkey",
-        "flag": "🇹🇷",
-        "operators": ["Turkcell", "Vodafone TR"],
-        "popularity_score": 100,
-    },
-    {
-        "country_code": "AE",
-        "country_name": "United Arab Emirates",
-        "flag": "🇦🇪",
-        "operators": ["Etisalat", "du"],
-        "popularity_score": 90,
-    },
-    {
-        "country_code": "KZ",
-        "country_name": "Kazakhstan",
-        "flag": "🇰🇿",
-        "operators": ["Kcell", "Beeline KZ", "Tele2"],
-        "popularity_score": 80,
-    },
-    {
-        "country_code": "CN",
-        "country_name": "China",
-        "flag": "🇨🇳",
-        "operators": ["China Mobile", "China Unicom"],
-        "popularity_score": 70,
-    },
-    {
-        "country_code": "UZ",
-        "country_name": "Uzbekistan",
-        "flag": "🇺🇿",
-        "operators": ["Ucell", "Beeline UZ"],
-        "popularity_score": 60,
-    },
-    {
-        "country_code": "SA",
-        "country_name": "Saudi Arabia",
-        "flag": "🇸🇦",
-        "operators": ["STC", "Zain", "Mobily"],
-        "popularity_score": 50,
-    },
-    {
-        "country_code": "KG",
-        "country_name": "Kyrgyzstan",
-        "flag": "🇰🇬",
-        "operators": ["Beeline KG", "MegaCom"],
-        "popularity_score": 40,
-    },
-    {
-        "country_code": "QA",
-        "country_name": "Qatar",
-        "flag": "🇶🇦",
-        "operators": ["Ooredoo", "Vodafone QA"],
-        "popularity_score": 30,
-    },
-    {
-        "country_code": "DE",
-        "country_name": "Germany",
-        "flag": "🇩🇪",
-        "operators": ["Telekom", "Vodafone DE"],
-        "popularity_score": 20,
-    },
-    {
-        "country_code": "PL",
-        "country_name": "Poland",
-        "flag": "🇵🇱",
-        "operators": ["Orange", "Play"],
-        "popularity_score": 10,
-    },
-)
-
 
 class ResellerService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-    async def list_popular_countries(self) -> PopularCountryListResponse:
+    async def list_countries(self) -> PopularCountryListResponse:
+        client = await self._get_client()
+        countries: dict[str, dict[str, Any]] = {}
+        page_size = 100
+        page_number = 1
+        try:
+            while True:
+                payload = await client.get_bundles(
+                    page_number=page_number,
+                    page_size=page_size,
+                )
+                data = payload.get("data")
+                if not isinstance(data, dict):
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty returned an invalid bundles response",
+                    )
+                items = data.get("items", [])
+                if not isinstance(items, list):
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty returned an invalid bundles response",
+                    )
+                for bundle in items:
+                    if not isinstance(bundle, dict):
+                        continue
+                    supported_countries = bundle.get("supportedCountries", [])
+                    if not isinstance(supported_countries, list):
+                        continue
+                    for country in supported_countries:
+                        if not isinstance(country, dict):
+                            continue
+                        code = country.get("isoCode")
+                        name = country.get("name")
+                        if code and name:
+                            countries.setdefault(
+                                str(code).upper(),
+                                {
+                                    "country_code": str(code).upper(),
+                                    "country_name": str(name),
+                                },
+                            )
+                total = int(data.get("totalRows", 0) or 0)
+                if not items or page_number * page_size >= total:
+                    break
+                page_number += 1
+        except MontyError as error:
+            raise self._http_error(error) from error
+        finally:
+            await client.close()
+
+        codes = list(countries)
+        metadata_rows = await self.session.scalars(
+            select(Country).where(
+                Country.country_code.in_(codes),
+                Country.is_active.is_(True),
+            )
+        )
+        metadata_by_code = {
+            country.country_code: country for country in metadata_rows
+        }
+        result = []
+        for code, country in countries.items():
+            metadata = metadata_by_code.get(code)
+            result.append(
+                PopularCountryResponse(
+                    country_code=code,
+                    country_name=(
+                        metadata.country_name
+                        if metadata is not None
+                        else country["country_name"]
+                    ),
+                    region=metadata.region if metadata is not None else "other",
+                    flag=metadata.flag if metadata is not None else "",
+                    operators=metadata.operators if metadata is not None else [],
+                    popularity_score=(
+                        metadata.popularity_score if metadata is not None else 0
+                    ),
+                    is_popular=(
+                        metadata.is_popular if metadata is not None else False
+                    ),
+                )
+            )
+        result.sort(
+            key=lambda country: (
+                not country.is_popular,
+                -country.popularity_score,
+                country.country_name,
+            )
+        )
         return PopularCountryListResponse(
-            countries=[
-                PopularCountryResponse.model_validate(country)
-                for country in POPULAR_COUNTRIES
-            ]
+            countries=result,
         )
 
     async def list_bundles(self, filters: Mapping[str, Any]) -> BundleListResponse:
         client = await self._get_client()
         try:
-            payload = await client.get_bundles(**filters)
+            country_code = filters.get("country_code")
+            if country_code is None:
+                payload = await client.get_bundles(**filters)
+            else:
+                payload = await self._get_bundles_for_country(
+                    client,
+                    country_code=str(country_code),
+                    filters=filters,
+                )
         except MontyError as error:
             raise self._http_error(error) from error
         finally:
@@ -135,7 +157,10 @@ class ResellerService:
                 detail="Monty returned an invalid bundles response",
             ) from error
         requested_page = int(filters.get("page_number") or 1)
-        requested_size = filters.get("page_size")
+        requested_size = int(filters.get("page_size") or len(bundles) or 1)
+        if country_code is not None:
+            start = (requested_page - 1) * requested_size
+            bundles = bundles[start : start + requested_size]
         total = (
             data.get("totalRows", len(bundles))
             if isinstance(data, dict)
@@ -149,8 +174,53 @@ class ResellerService:
                 if isinstance(data, dict)
                 else requested_page
             ),
-            page_size=int(requested_size or len(bundles)),
+            page_size=requested_size,
         )
+
+    async def _get_bundles_for_country(
+        self,
+        client: MontyClient,
+        *,
+        country_code: str,
+        filters: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        all_items: list[dict[str, Any]] = []
+        page_number = 1
+        page_size = 100
+        normalized_code = country_code.upper()
+        while True:
+            payload = await client.get_bundles(
+                page_number=page_number,
+                page_size=page_size,
+                **{
+                    key: value
+                    for key, value in filters.items()
+                    if key not in {"country_code", "page_number", "page_size"}
+                },
+            )
+            data = payload.get("data")
+            if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Monty returned an invalid bundles response",
+                )
+            for item in data["items"]:
+                if not isinstance(item, dict):
+                    continue
+                countries = item.get("supportedCountries", [])
+                if not isinstance(countries, list):
+                    continue
+                if any(
+                    isinstance(country, dict)
+                    and str(country.get("isoCode", "")).upper() == normalized_code
+                    for country in countries
+                ):
+                    all_items.append(item)
+            total = int(data.get("totalRows", 0) or 0)
+            if not data["items"] or page_number * page_size >= total:
+                break
+            page_number += 1
+        return {"data": {"items": all_items, "totalRows": len(all_items)}}
 
     async def assign_bundle(
         self,

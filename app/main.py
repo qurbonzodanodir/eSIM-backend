@@ -15,7 +15,7 @@ from app.core.logging import configure_logging
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
 from app.profile.router import router as profile_router
-from app.reseller.router import router as reseller_router
+from app.reseller.router import countries_router, router as reseller_router
 from pydantic import ValidationError
 from sqlalchemy.exc import IntegrityError
 
@@ -46,6 +46,7 @@ def create_app() -> FastAPI:
     application.include_router(auth_router, prefix=api_prefix)
     application.include_router(catalog_router, prefix=api_prefix)
     application.include_router(profile_router, prefix=api_prefix)
+    application.include_router(countries_router, prefix=api_prefix)
     application.include_router(reseller_router, prefix=api_prefix)
 
     @application.get("/health")
