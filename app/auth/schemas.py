@@ -14,6 +14,9 @@ class RequestOtpRequest(BaseModel):
     @field_validator("phone")
     @classmethod
     def normalize_phone(cls, value: str) -> str:
+        value = value.strip()
+        if not value.startswith("+"):
+            raise ValueError("Phone number must use international format")
         try:
             parsed = phonenumbers.parse(value, None)
         except phonenumbers.NumberParseException as error:

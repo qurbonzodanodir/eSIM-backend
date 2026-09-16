@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     monty_api_key: str | None = None
     monty_bearer_token: str | None = None
     monty_timeout_seconds: float = 10.0
+    monty_bundles_cache_ttl_seconds: float = 60.0
+    monty_countries_cache_ttl_seconds: float = 300.0
+    monty_max_bundle_pages: int = 100
+    order_pending_timeout_seconds: int = 900
     sms_provider: str = "development"
     sms_api_url: str
     sms_api_key: str

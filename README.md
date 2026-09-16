@@ -112,6 +112,9 @@ remaining countries are returned afterward with a score of zero.
 Each country also includes a `region` value: `europe`, `middle_east`, `asia`,
 or `other`, allowing the mobile app to group countries without separate
 region endpoints.
+The extracted country list is cached for the configured
+`MONTY_COUNTRIES_CACHE_TTL_SECONDS` period to avoid scanning the full Monty
+catalog on every request.
 
 The development SMS and payment adapters are placeholders. Real provider adapters can be added without changing the auth or profile services.
 

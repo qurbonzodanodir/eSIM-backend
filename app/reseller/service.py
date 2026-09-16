@@ -1,14 +1,19 @@
 from collections.abc import Mapping
+import asyncio
+from copy import deepcopy
+from time import monotonic
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 from pydantic import ValidationError
 
 from app.enums.order_status import OrderStatus
+from app.core.config import get_settings
 from app.integrations.monty import MontyClient, MontyError
 from app.reseller.models import Order
 from app.reseller.country_models import Country
@@ -26,59 +31,32 @@ from app.reseller.schemas import (
 
 
 class ResellerService:
+    _countries_cache: tuple[float, dict[str, dict[str, Any]]] | None = None
+    _countries_cache_lock: asyncio.Lock | None = None
+
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def list_countries(self) -> PopularCountryListResponse:
-        client = await self._get_client()
-        countries: dict[str, dict[str, Any]] = {}
-        page_size = 100
-        page_number = 1
-        try:
-            while True:
-                payload = await client.get_bundles(
-                    page_number=page_number,
-                    page_size=page_size,
-                )
-                data = payload.get("data")
-                if not isinstance(data, dict):
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail="Monty returned an invalid bundles response",
+        settings = get_settings()
+        now = monotonic()
+        if (
+            self._countries_cache is None
+            or self._countries_cache[0] <= now
+        ):
+            lock = self._get_countries_cache_lock()
+            async with lock:
+                now = monotonic()
+                if (
+                    self._countries_cache is None
+                    or self._countries_cache[0] <= now
+                ):
+                    countries = await self._load_countries_from_monty()
+                    self._countries_cache = (
+                        now + settings.monty_countries_cache_ttl_seconds,
+                        countries,
                     )
-                items = data.get("items", [])
-                if not isinstance(items, list):
-                    raise HTTPException(
-                        status_code=status.HTTP_502_BAD_GATEWAY,
-                        detail="Monty returned an invalid bundles response",
-                    )
-                for bundle in items:
-                    if not isinstance(bundle, dict):
-                        continue
-                    supported_countries = bundle.get("supportedCountries", [])
-                    if not isinstance(supported_countries, list):
-                        continue
-                    for country in supported_countries:
-                        if not isinstance(country, dict):
-                            continue
-                        code = country.get("isoCode")
-                        name = country.get("name")
-                        if code and name:
-                            countries.setdefault(
-                                str(code).upper(),
-                                {
-                                    "country_code": str(code).upper(),
-                                    "country_name": str(name),
-                                },
-                            )
-                total = int(data.get("totalRows", 0) or 0)
-                if not items or page_number * page_size >= total:
-                    break
-                page_number += 1
-        except MontyError as error:
-            raise self._http_error(error) from error
-        finally:
-            await client.close()
+        countries = deepcopy(self._countries_cache[1])
 
         codes = list(countries)
         metadata_rows = await self.session.scalars(
@@ -122,6 +100,81 @@ class ResellerService:
         return PopularCountryListResponse(
             countries=result,
         )
+
+    @classmethod
+    def _get_countries_cache_lock(cls) -> asyncio.Lock:
+        if cls._countries_cache_lock is None:
+            cls._countries_cache_lock = asyncio.Lock()
+        return cls._countries_cache_lock
+
+    async def _load_countries_from_monty(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        client: MontyClient | None = None
+        countries: dict[str, dict[str, Any]] = {}
+        page_size = 100
+        page_number = 1
+        seen_pages: set[int] = set()
+        max_pages = get_settings().monty_max_bundle_pages
+        try:
+            client = await self._get_client()
+            while True:
+                payload = await client.get_bundles(
+                    page_number=page_number,
+                    page_size=page_size,
+                )
+                data = payload.get("data")
+                if not isinstance(data, dict):
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty returned an invalid bundles response",
+                    )
+                response_page = int(data.get("pageIndex", page_number) or page_number)
+                if response_page in seen_pages:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty returned a repeated bundles page",
+                    )
+                seen_pages.add(response_page)
+                if len(seen_pages) > max_pages:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty bundles pagination exceeded the configured limit",
+                    )
+                items = data.get("items", [])
+                if not isinstance(items, list):
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Monty returned an invalid bundles response",
+                    )
+                for bundle in items:
+                    if not isinstance(bundle, dict):
+                        continue
+                    supported_countries = bundle.get("supportedCountries", [])
+                    if not isinstance(supported_countries, list):
+                        continue
+                    for country in supported_countries:
+                        if not isinstance(country, dict):
+                            continue
+                        code = country.get("isoCode")
+                        name = country.get("name")
+                        if code and name:
+                            countries.setdefault(
+                                str(code).upper(),
+                                {
+                                    "country_code": str(code).upper(),
+                                    "country_name": str(name),
+                                },
+                            )
+                total = int(data.get("totalRows", 0) or 0)
+                if not items or page_number * page_size >= total:
+                    return countries
+                page_number += 1
+        except MontyError as error:
+            raise self._http_error(error) from error
+        finally:
+            if client is not None:
+                await client.close()
 
     async def list_bundles(self, filters: Mapping[str, Any]) -> BundleListResponse:
         client = await self._get_client()
@@ -187,6 +240,8 @@ class ResellerService:
         all_items: list[dict[str, Any]] = []
         page_number = 1
         page_size = 100
+        max_pages = get_settings().monty_max_bundle_pages
+        seen_pages: set[int] = set()
         normalized_code = country_code.upper()
         while True:
             payload = await client.get_bundles(
@@ -203,6 +258,18 @@ class ResellerService:
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail="Monty returned an invalid bundles response",
+                )
+            response_page = int(data.get("pageIndex", page_number) or page_number)
+            if response_page in seen_pages:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Monty returned a repeated bundles page",
+                )
+            seen_pages.add(response_page)
+            if len(seen_pages) > max_pages:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail="Monty bundles pagination exceeded the configured limit",
                 )
             for item in data["items"]:
                 if not isinstance(item, dict):
@@ -227,6 +294,14 @@ class ResellerService:
         user_id: UUID,
         request: AssignBundleRequest,
     ) -> OrderResponse:
+        await self.session.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtextextended(:order_reference, 0)"
+                ")"
+            ),
+            {"order_reference": request.order_reference},
+        )
         existing = await self.session.scalar(
             select(Order).where(
                 Order.order_reference == request.order_reference,
@@ -238,54 +313,78 @@ class ResellerService:
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Order reference is already in use",
                 )
-            return OrderResponse.model_validate(existing)
-
-        client = await self._get_client()
-        try:
-            payload = await client.create_order(
-                {
-                    "ServiceTag": "ESIM",
-                    "BundleGuid": request.bundle_guid,
-                    "UniqueIdentifier": request.order_reference,
-                    "PhoneNumber": request.whatsapp_number,
-                    "ClientName": request.name,
-                    "Email": request.email,
-                    "PaymentMethod": request.payment_method,
-                    "CurrencyCode": request.currency_code,
-                }
-            )
-        except MontyError as error:
-            raise self._http_error(error) from error
-        finally:
-            await client.close()
-
-        order = Order(
-            user_id=user_id,
-            order_reference=request.order_reference,
-            bundle_code=request.bundle_code or request.bundle_guid,
-            bundle_guid=request.bundle_guid,
-            monty_order_id=self._value(payload, "order_id", "monty_order_id"),
-            iccid=self._value(payload, "iccid"),
-            status=OrderStatus.COMPLETED,
-        )
-        self.session.add(order)
-        try:
-            await self.session.commit()
-        except IntegrityError:
-            await self.session.rollback()
-            existing = await self.session.scalar(
-                select(Order).where(
-                    Order.order_reference == request.order_reference,
+            if existing.status == OrderStatus.PENDING:
+                pending_deadline = existing.updated_at + timedelta(
+                    seconds=get_settings().order_pending_timeout_seconds,
                 )
+                if pending_deadline > datetime.now(UTC):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="Order is already being processed",
+                    )
+                existing.status = OrderStatus.FAILED
+                order = existing
+            else:
+                return OrderResponse.model_validate(existing)
+        else:
+            order = Order(
+                user_id=user_id,
+                order_reference=request.order_reference,
+                bundle_code=request.bundle_code or request.bundle_guid,
+                bundle_guid=request.bundle_guid,
+                status=OrderStatus.PENDING,
             )
-            if existing is None:
-                raise
-            if existing.user_id != user_id:
+            self.session.add(order)
+            try:
+                await self.session.flush()
+            except IntegrityError:
+                await self.session.rollback()
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail="Order reference is already in use",
+                    detail="Order reference is already being processed",
+                ) from None
+
+        client: MontyClient | None = None
+        try:
+            client = await self._get_client()
+            payload = await client.create_order(
+                self._without_none(
+                    {
+                        "ServiceTag": "ESIM",
+                        "BundleGuid": request.bundle_guid,
+                        "UniqueIdentifier": request.order_reference,
+                        "PhoneNumber": request.whatsapp_number,
+                        "ClientName": request.name,
+                        "Email": request.email,
+                        "PaymentMethod": request.payment_method,
+                        "CurrencyCode": request.currency_code,
+                    }
                 )
-            return OrderResponse.model_validate(existing)
+            )
+        except MontyError as error:
+            order.status = OrderStatus.FAILED
+            await self.session.commit()
+            raise self._http_error(error) from error
+        finally:
+            if client is not None:
+                await client.close()
+
+        if payload.get("success") is False:
+            order.status = OrderStatus.FAILED
+            await self.session.commit()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Monty rejected the order",
+            )
+        order.monty_order_id = self._value(
+            payload,
+            "order_id",
+            "monty_order_id",
+        )
+        order.iccid = self._value(payload, "iccid")
+        if order.monty_order_id is not None or order.iccid is not None:
+            order.status = OrderStatus.COMPLETED
+        await self.session.commit()
         await self.session.refresh(order)
         return OrderResponse.model_validate(order)
 
@@ -452,8 +551,21 @@ class ResellerService:
         return None
 
     @staticmethod
+    def _without_none(payload: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            key: value
+            for key, value in payload.items()
+            if value is not None
+        }
+
+    @staticmethod
     def _http_error(error: MontyError) -> HTTPException:
         code = (
+            status.HTTP_503_SERVICE_UNAVAILABLE
+            if error.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+            else status.HTTP_504_GATEWAY_TIMEOUT
+            if error.status_code == status.HTTP_504_GATEWAY_TIMEOUT
+            else
             status.HTTP_502_BAD_GATEWAY
             if error.status_code >= 500
             else error.status_code

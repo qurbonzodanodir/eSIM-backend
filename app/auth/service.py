@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -21,7 +21,7 @@ from app.auth.schemas import (
     TokenResponse,
     VerifyOtpResponse,
 )
-from app.integrations.sms import SmsSender
+from app.integrations.sms import SmsProviderError, SmsSender
 from app.profile.models import User
 
 
@@ -33,6 +33,14 @@ class AuthService:
 
     async def request_otp(self, phone: str) -> RequestOtpResponse:
         now = datetime.now(UTC)
+        await self.session.execute(
+            text(
+                "SELECT pg_advisory_xact_lock("
+                "hashtextextended(:phone, 0)"
+                ")"
+            ),
+            {"phone": phone},
+        )
         window_start = now - timedelta(
             seconds=self.settings.otp_rate_limit_window_seconds,
         )
@@ -65,8 +73,16 @@ class AuthService:
             + timedelta(minutes=self.settings.otp_expire_minutes),
         )
         self.session.add(request)
+        await self.session.flush()
+        try:
+            await self.sms_sender.send_otp(phone, code)
+        except SmsProviderError as error:
+            await self.session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="SMS provider is unavailable",
+            ) from error
         await self.session.commit()
-        await self.sms_sender.send_otp(phone, code)
         return RequestOtpResponse(
             request_id=request.request_id,
             ttl=self.settings.otp_expire_minutes * 60,
@@ -82,6 +98,7 @@ class AuthService:
                 OtpRequest.expires_at > now,
             )
             .order_by(OtpRequest.created_at.desc())
+            .with_for_update()
         )
         if request is None or not verify_otp(code, request.code_hash):
             if request is not None:
@@ -138,7 +155,7 @@ class AuthService:
                 RefreshToken.token_hash == hash_token(raw_token),
                 RefreshToken.revoked_at.is_(None),
                 RefreshToken.expires_at > now,
-            )
+            ).with_for_update()
         )
         if token is None:
             raise HTTPException(

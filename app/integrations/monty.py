@@ -1,4 +1,6 @@
 from collections.abc import Mapping
+from copy import deepcopy
+from time import monotonic
 from typing import Any
 
 import httpx
@@ -14,6 +16,11 @@ class MontyError(Exception):
 
 
 class MontyClient:
+    _bundles_cache: dict[
+        tuple[tuple[str, Any], ...],
+        tuple[float, Mapping[str, Any]],
+    ] = {}
+
     def __init__(self, client: httpx.AsyncClient | None = None) -> None:
         settings = get_settings()
         if not settings.monty_tenant or not settings.monty_api_key:
@@ -41,13 +48,27 @@ class MontyClient:
             }.items()
             if value is not None
         }
-        return await self._request(
+        cache_key = tuple(sorted(params.items()))
+        cached = self._bundles_cache.get(cache_key)
+        now = monotonic()
+        if cached is not None:
+            expires_at, payload = cached
+            if expires_at > now:
+                return deepcopy(payload)
+            self._bundles_cache.pop(cache_key, None)
+
+        payload = await self._request(
             "GET",
             "/Bundle/get-all-basic/active",
             base_url=self._settings.monty_catalog_base_url,
             params=params,
             api_key=True,
         )
+        self._bundles_cache[cache_key] = (
+            now + self._settings.monty_bundles_cache_ttl_seconds,
+            deepcopy(payload),
+        )
+        return payload
 
     async def get_bundles_with_currency(
         self,
@@ -123,6 +144,8 @@ class MontyClient:
                 error.response.status_code,
                 "Monty request failed",
             ) from error
+        except httpx.TimeoutException as error:
+            raise MontyError(504, "Monty request timed out") from error
         except httpx.HTTPError as error:
             raise MontyError(502, "Monty is unavailable") from error
 
@@ -134,4 +157,7 @@ class MontyClient:
             raise MontyError(502, "Monty returned invalid JSON") from error
         if not isinstance(data, dict):
             raise MontyError(502, "Monty returned an unexpected response")
+        if data.get("success") is False:
+            detail = data.get("message") or data.get("error") or "Monty request failed"
+            raise MontyError(502, str(detail))
         return data

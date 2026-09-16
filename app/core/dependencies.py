@@ -4,8 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.catalog.service import CatalogService
 from app.core.database import get_session
 from app.integrations.payment import (
-    DevelopmentPaymentService,
     PaymentService,
+    get_payment_service,
 )
 from app.integrations.sms import SmsSender, get_sms_sender
 from app.profile.service import ProfileService
@@ -18,8 +18,9 @@ def get_auth_sms_sender() -> SmsSender:
 
 def get_profile_service(
     session: AsyncSession = Depends(get_session),
+    payment_service: PaymentService = Depends(get_payment_service),
 ) -> ProfileService:
-    return ProfileService(session, DevelopmentPaymentService())
+    return ProfileService(session, payment_service)
 
 
 def get_catalog_service(

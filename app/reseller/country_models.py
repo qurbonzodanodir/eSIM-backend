@@ -11,7 +11,6 @@ class Country(Base, ModelMixin):
         String(2),
         unique=True,
         nullable=False,
-        index=True,
     )
     country_name: Mapped[str] = mapped_column(String(100), nullable=False)
     region: Mapped[str] = mapped_column(String(30), nullable=False)
