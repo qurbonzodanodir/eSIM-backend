@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.catalog.models import Operator, PremiumNumber
+from app.catalog.models import Operator, PremiumNumber, Tariff
 from app.catalog.schemas import (
     OperatorResponse,
     PremiumNumberResponse,
@@ -20,7 +20,7 @@ class CatalogService:
     async def list_operators(self) -> list[OperatorResponse]:
         result = await self.session.scalars(
             select(Operator)
-            .options(selectinload(Operator.tariffs))
+            .options(selectinload(Operator.tariffs.and_(Tariff.deleted_at.is_(None))))
             .where(Operator.deleted_at.is_(None))
             .order_by(Operator.popular.desc(), Operator.name),
         )
@@ -32,7 +32,7 @@ class CatalogService:
     async def get_operator(self, operator_id: UUID) -> OperatorResponse:
         operator = await self.session.scalar(
             select(Operator)
-            .options(selectinload(Operator.tariffs))
+            .options(selectinload(Operator.tariffs.and_(Tariff.deleted_at.is_(None))))
             .where(
                 Operator.id == operator_id,
                 Operator.deleted_at.is_(None),
@@ -48,6 +48,9 @@ class CatalogService:
     async def list_premium_numbers(
         self,
         operator_id: UUID,
+        *,
+        page_number: int = 1,
+        page_size: int = 20,
     ) -> list[PremiumNumberResponse]:
         operator_exists = await self.session.scalar(
             select(Operator.id).where(
@@ -67,7 +70,9 @@ class CatalogService:
                 PremiumNumber.operator_id == operator_id,
                 PremiumNumber.deleted_at.is_(None),
             )
-            .order_by(PremiumNumber.surcharge.desc()),
+            .order_by(PremiumNumber.surcharge.desc(), PremiumNumber.id.desc())
+            .offset((page_number - 1) * page_size)
+            .limit(page_size),
         )
         return [
             PremiumNumberResponse.model_validate(number)

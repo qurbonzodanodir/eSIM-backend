@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,29 +11,33 @@ class Settings(BaseSettings):
     database_url: str
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
-    access_token_expire_minutes: int = 15
-    refresh_token_expire_days: int = 7
-    otp_expire_minutes: int = 5
+    access_token_expire_minutes: int = Field(default=15, gt=0)
+    refresh_token_expire_days: int = Field(default=7, gt=0)
+    otp_expire_minutes: int = Field(default=5, gt=0)
     monty_catalog_base_url: str
     monty_core_base_url: str
     monty_tenant: str | None = None
     monty_api_key: str | None = None
     monty_bearer_token: str | None = None
-    monty_timeout_seconds: float = 10.0
+    monty_timeout_seconds: float = Field(default=10.0, gt=0, allow_inf_nan=False)
     monty_bundles_cache_ttl_seconds: float = 60.0
     monty_countries_cache_ttl_seconds: float = 300.0
-    monty_max_bundle_pages: int = 100
-    order_pending_timeout_seconds: int = 900
+    monty_max_bundle_pages: int = Field(default=100, gt=0)
+    monty_sync_interval_seconds: int = Field(default=3600, gt=0)
+    monty_sync_currencies: str = ""
+    monty_sync_timeout_seconds: float = Field(default=300.0, gt=0, allow_inf_nan=False)
+    database_statement_timeout_ms: int = Field(default=30000, gt=0)
+    database_lock_timeout_ms: int = Field(default=5000, gt=0)
     sms_provider: str = "development"
     sms_api_url: str
     sms_api_key: str
     sms_sender_name: str
-    sms_timeout_seconds: float = 10.0
+    sms_timeout_seconds: float = Field(default=10.0, gt=0, allow_inf_nan=False)
     sms_otp_template: str = "Your verification code is {code}"
     payment_provider: str = "development"
-    otp_max_requests_per_window: int = 3
-    otp_rate_limit_window_seconds: int = 900
-    otp_max_attempts: int = 5
+    otp_max_requests_per_window: int = Field(default=3, gt=0)
+    otp_rate_limit_window_seconds: int = Field(default=900, gt=0)
+    otp_max_attempts: int = Field(default=5, gt=0)
     cors_allowed_origins: str
 
     model_config = SettingsConfigDict(

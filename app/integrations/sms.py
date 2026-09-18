@@ -1,3 +1,4 @@
+import asyncio
 from typing import Protocol
 
 import httpx
@@ -38,18 +39,19 @@ class SmsCenterSender:
             "source_addr": self.source_addr,
         }
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    self.api_url,
-                    headers={
-                        "accept": "application/json",
-                        "X-API-Key": self.api_key,
-                        "Content-Type": "application/json",
-                    },
-                    json=payload,
-                )
-                response.raise_for_status()
-        except httpx.HTTPError as error:
+            async with asyncio.timeout(self.timeout):
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        self.api_url,
+                        headers={
+                            "accept": "application/json",
+                            "X-API-Key": self.api_key,
+                            "Content-Type": "application/json",
+                        },
+                        json=payload,
+                    )
+                    response.raise_for_status()
+        except (httpx.HTTPError, TimeoutError) as error:
             raise SmsProviderError("SMS provider request failed") from error
 
 

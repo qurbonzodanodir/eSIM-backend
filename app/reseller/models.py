@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Uuid
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.models import Base, ModelMixin
@@ -62,3 +62,5 @@ class ResellerSession(Base, ModelMixin):
         DateTime(timezone=True),
         nullable=False,
     )
+
+Index("ix_orders_user_created_id", Order.user_id, Order.created_at.desc(), Order.id.desc())

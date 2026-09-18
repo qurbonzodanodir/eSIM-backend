@@ -1,7 +1,7 @@
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text, Uuid
+from sqlalchemy import Boolean, Enum, ForeignKey, Index, Numeric, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.models import Base, ModelMixin, SoftDeleteMixin
@@ -69,3 +69,9 @@ class PremiumNumber(Base, ModelMixin, SoftDeleteMixin):
         nullable=False,
     )
     operator: Mapped["Operator"] = relationship(back_populates="premium_numbers")
+
+Index(
+    "ix_premium_numbers_operator_price_id",
+    PremiumNumber.operator_id, PremiumNumber.surcharge.desc(), PremiumNumber.id.desc(),
+    postgresql_where=PremiumNumber.deleted_at.is_(None),
+)

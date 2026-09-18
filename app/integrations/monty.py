@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import Mapping
 from copy import deepcopy
 from time import monotonic
@@ -35,7 +36,7 @@ class MontyClient:
         if self._owns_client:
             await self._client.aclose()
 
-    async def get_bundles(self, **filters: Any) -> Mapping[str, Any]:
+    async def get_bundles(self, *, use_cache: bool = True, **filters: Any) -> Mapping[str, Any]:
         params = {
             key: value
             for key, value in {
@@ -49,7 +50,7 @@ class MontyClient:
             if value is not None
         }
         cache_key = tuple(sorted(params.items()))
-        cached = self._bundles_cache.get(cache_key)
+        cached = self._bundles_cache.get(cache_key) if use_cache else None
         now = monotonic()
         if cached is not None:
             expires_at, payload = cached
@@ -64,10 +65,16 @@ class MontyClient:
             params=params,
             api_key=True,
         )
-        self._bundles_cache[cache_key] = (
-            now + self._settings.monty_bundles_cache_ttl_seconds,
-            deepcopy(payload),
-        )
+        if use_cache:
+            for key, (expires_at, _) in list(self._bundles_cache.items()):
+                if expires_at <= monotonic():
+                    self._bundles_cache.pop(key, None)
+            if len(self._bundles_cache) >= 256:
+                self._bundles_cache.pop(next(iter(self._bundles_cache)))
+            self._bundles_cache[cache_key] = (
+                now + self._settings.monty_bundles_cache_ttl_seconds,
+                deepcopy(payload),
+            )
         return payload
 
     async def get_bundles_with_currency(
@@ -132,19 +139,20 @@ class MontyClient:
                 f"Bearer {self._settings.monty_bearer_token}"
             )
         try:
-            response = await self._client.request(
-                method,
-                f"{base_url.rstrip('/')}/{path.lstrip('/')}",
-                headers=headers,
-                **kwargs,
-            )
+            async with asyncio.timeout(self._settings.monty_timeout_seconds):
+                response = await self._client.request(
+                    method,
+                    f"{base_url.rstrip('/')}/{path.lstrip('/')}",
+                    headers=headers,
+                    **kwargs,
+                )
             response.raise_for_status()
         except httpx.HTTPStatusError as error:
             raise MontyError(
                 error.response.status_code,
                 "Monty request failed",
             ) from error
-        except httpx.TimeoutException as error:
+        except (httpx.TimeoutException, TimeoutError) as error:
             raise MontyError(504, "Monty request timed out") from error
         except httpx.HTTPError as error:
             raise MontyError(502, "Monty is unavailable") from error

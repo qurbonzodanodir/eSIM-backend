@@ -32,7 +32,6 @@ class AuthService:
         self.settings = get_settings()
 
     async def request_otp(self, phone: str) -> RequestOtpResponse:
-        now = datetime.now(UTC)
         await self.session.execute(
             text(
                 "SELECT pg_advisory_xact_lock("
@@ -41,6 +40,7 @@ class AuthService:
             ),
             {"phone": phone},
         )
+        now = datetime.now(UTC)
         window_start = now - timedelta(
             seconds=self.settings.otp_rate_limit_window_seconds,
         )
@@ -89,6 +89,10 @@ class AuthService:
         )
 
     async def verify_otp(self, phone: str, code: str) -> VerifyOtpResponse:
+        await self.session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:phone, 0))"),
+            {"phone": phone},
+        )
         now = datetime.now(UTC)
         request = await self.session.scalar(
             select(OtpRequest)
@@ -196,7 +200,7 @@ class AuthService:
             select(RefreshToken).where(
                 RefreshToken.token_hash == hash_token(raw_token),
                 RefreshToken.revoked_at.is_(None),
-            )
+            ).with_for_update()
         )
         if token is None:
             raise HTTPException(

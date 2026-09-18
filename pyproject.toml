@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.13",
     "asyncpg>=0.29",
+    "email-validator>=2.2",
     "fastapi>=0.115",
     "httpx>=0.28",
     "phonenumbers>=9.0",

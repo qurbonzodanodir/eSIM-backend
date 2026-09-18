@@ -69,7 +69,7 @@ class ProfileService:
             select(User).where(
                 User.id == user_id,
                 User.deleted_at.is_(None),
-            )
+            ).with_for_update()
         )
         if user is None:
             raise HTTPException(
