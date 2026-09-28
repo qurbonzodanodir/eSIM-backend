@@ -258,6 +258,17 @@ class ResellerService:
         filters: Mapping[str, Any],
     ) -> UpstreamResponse:
         await self._ensure_user(user_id)
+        order = await self.session.scalar(
+            select(Order.id).where(
+                Order.user_id == user_id,
+                Order.monty_order_id == filters["order_id"],
+            )
+        )
+        if order is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Order not found",
+            )
         return await self._proxy("get_compatible_topups", filters)
 
     async def _proxy(

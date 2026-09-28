@@ -87,8 +87,7 @@ class OrderFilters(BaseModel):
 
 
 class TopupFilters(BaseModel):
-    bundle_code: Identifier
-    country_code: CountryCode | None = None
+    order_id: Identifier
     currency_code: CurrencyCode | None = None
 
 

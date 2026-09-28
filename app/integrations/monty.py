@@ -112,11 +112,19 @@ class MontyClient:
         self,
         **filters: Any,
     ) -> Mapping[str, Any]:
+        params = {
+            key: value
+            for key, value in {
+                "orderId": filters.get("order_id"),
+                "currencyCode": filters.get("currency_code"),
+            }.items()
+            if value is not None
+        }
         return await self._request(
             "GET",
             "/order/compatible-topup-with-currency",
             base_url=self._settings.monty_core_base_url,
-            params=filters,
+            params=params,
             api_key=True,
         )
 

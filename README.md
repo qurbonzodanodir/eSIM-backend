@@ -109,6 +109,8 @@ The bundle and country endpoints read exclusively from PostgreSQL. They make
 no Monty calls. A separate worker downloads the full active catalog and publishes
 it atomically. Bundles missing from a successful snapshot become inactive; an
 incomplete, malformed, or empty default snapshot leaves the previous catalog intact.
+The available top-up endpoint accepts the authenticated user's Monty `order_id`
+and an optional `currency_code`; it rejects orders that do not belong to that user.
 Existing country presentation metadata (names, region, flags, operators and
 popularity) is preserved. New countries receive `europe`, `middle_east`, `asia` or `other` from the ISO-code
 mapping in `app/reseller/regions.py`, with an empty flag/operators list and zero
