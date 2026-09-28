@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from app.core.config import get_settings
+from app.core.model_registry import load_models
 
 
+load_models()
 settings = get_settings()
 engine = create_async_engine(
     settings.database_url,

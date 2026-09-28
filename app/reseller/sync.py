@@ -56,7 +56,7 @@ async def download_catalog(client, currency: str, max_pages: int) -> list[dict]:
             if currency and (normalized.currency_code or "").upper() != currency:
                 raise ValueError("Monty did not return the requested currency")
             countries = item.get("supportedCountries")
-            if not isinstance(countries, list) or not countries:
+            if not isinstance(countries, list):
                 raise ValueError("Missing supported countries")
             country_map = {}
             for country in countries:
